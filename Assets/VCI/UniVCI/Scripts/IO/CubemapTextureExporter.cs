@@ -30,7 +30,7 @@ namespace VCI
         private static readonly int ShaderPropertyFaceIndex = Shader.PropertyToID("_FaceIndex");
         private static readonly int ShaderPropertyMipValue = Shader.PropertyToID("_MipLevel");
 
-        private readonly ITextureExporter _exporter;
+        private readonly TextureExporter _exporter;
         private readonly glTF _gltf;
         private readonly Shader _exportAsDLdrShader;
         private readonly Shader _exportAsRgbmShader;
@@ -41,7 +41,7 @@ namespace VCI
         /// </summary>
         public CubemapCompressionType CompressionType => CubemapCompressionType.Rgbm;
 
-        public CubemapTextureExporter(ITextureExporter exporter, glTF gltf)
+        public CubemapTextureExporter(TextureExporter exporter, glTF gltf)
         {
             _exporter = exporter;
             _gltf = gltf;
@@ -97,7 +97,7 @@ namespace VCI
 
         private int ConvertAndAddCubemapTexture(Texture src, CubemapFace face, int originalWidth, int mipmap)
         {
-            if (QualitySettings.activeColorSpace != ColorSpace.Linear)
+            if (QualitySettings.activeColorSpace != UnityEngine.ColorSpace.Linear)
             {
                 throw new NotSupportedException("ColorSpace の設定は Linear である必要があります。");
             }
@@ -119,7 +119,7 @@ namespace VCI
             exporterMaterial.SetInt(ShaderPropertyFaceIndex, GetFaceIndex(face));
             exporterMaterial.SetInt(ShaderPropertyMipValue, mipmap);
             Graphics.Blit(src, srgbRt, exporterMaterial);
-            var idx = _exporter.ExportTexture(_gltf, _gltf.buffers.Count - 1, srgbRt, glTFTextureTypes.Unknown);
+            var idx = _exporter.ExportSRGB(srgbRt);
 
             RenderTexture.ReleaseTemporary(srgbRt);
             UnityEngine.Object.DestroyImmediate(exporterMaterial);
