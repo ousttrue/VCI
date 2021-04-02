@@ -9,12 +9,28 @@ using UniJSON;
 namespace UniGLTF
 {
     [Serializable, StructLayout(LayoutKind.Sequential, Pack = 1)]
+    struct Byte4
+    {
+        public readonly byte x;
+        public readonly byte y;
+        public readonly byte z;
+        public readonly byte w;
+        public Byte4(byte _x, byte _y, byte _z, byte _w)
+        {
+            x = _x;
+            y = _y;
+            z = _z;
+            w = _w;
+        }
+    }
+
+    [Serializable, StructLayout(LayoutKind.Sequential, Pack = 1)]
     struct UShort4
     {
-        public ushort x;
-        public ushort y;
-        public ushort z;
-        public ushort w;
+        public readonly ushort x;
+        public readonly ushort y;
+        public readonly ushort z;
+        public readonly ushort w;
 
         public UShort4(ushort _x, ushort _y, ushort _z, ushort _w)
         {
@@ -325,7 +341,8 @@ namespace UniGLTF
             var bufferCount = vertexAccessor.count * vertexAccessor.TypeCount;
 
             float[] result = null;
-            if(vertexAccessor.bufferView != -1){
+            if (vertexAccessor.bufferView != -1)
+            {
                 var attrib = new float[vertexAccessor.count * vertexAccessor.TypeCount];
                 var view = self.bufferViews[vertexAccessor.bufferView];
                 var segment = self.buffers[view.buffer].GetBytes();
@@ -333,8 +350,9 @@ namespace UniGLTF
                 bytes.MarshalCopyTo(attrib);
                 result = attrib;
             }
-            else{
-                result =  new float[bufferCount];
+            else
+            {
+                result = new float[bufferCount];
             }
 
             var sparse = vertexAccessor.sparse;
@@ -354,28 +372,21 @@ namespace UniGLTF
             return result;
         }
 
-        public static ArraySegment<Byte> GetImageBytes(this glTF self, IStorage storage, int imageIndex, out string textureName)
+        public static ArraySegment<Byte> GetImageBytesFromTextureIndex(this glTF self, IStorage storage, int textureIndex)
+        {
+            var imageIndex = self.textures[textureIndex].source;
+            return self.GetImageBytes(storage, imageIndex);
+        }
+
+        public static ArraySegment<Byte> GetImageBytes(this glTF self, IStorage storage, int imageIndex)
         {
             var image = self.images[imageIndex];
             if (string.IsNullOrEmpty(image.uri))
             {
-                //
-                // use buffer view (GLB)
-                //
-                //m_imageBytes = ToArray(byteSegment);
-                textureName = !string.IsNullOrEmpty(image.name) ? image.name : string.Format("{0:00}#GLB", imageIndex);
                 return self.GetViewBytes(image.bufferView);
             }
             else
             {
-                if (image.uri.FastStartsWith("data:"))
-                {
-                    textureName = !string.IsNullOrEmpty(image.name) ? image.name : string.Format("{0:00}#Base64Embedded", imageIndex);
-                }
-                else
-                {
-                    textureName = !string.IsNullOrEmpty(image.name) ? image.name : Path.GetFileNameWithoutExtension(image.uri);
-                }
                 return storage.Get(image.uri);
             }
         }
@@ -441,7 +452,7 @@ namespace UniGLTF
             // remove unused extenions
             var json = f.ToString().ParseAsJson().ToString("  ");
             self.RemoveUnusedExtensions(json);
-            
+
             return Glb.Create(json, self.buffers[0].GetBytes()).ToBytes();
         }
 
@@ -464,6 +475,52 @@ namespace UniGLTF
             var json = f.ToString().ParseAsJson().ToString("  ");
             self.RemoveUnusedExtensions(json);
             return (json, self.buffers);
+        }
+
+        public static bool IsGeneratedUniGLTFAndOlderThan(string generatorVersion, int major, int minor)
+        {
+            if (string.IsNullOrEmpty(generatorVersion)) return false;
+            if (generatorVersion == "UniGLTF") return true;
+            if (!generatorVersion.FastStartsWith("UniGLTF-")) return false;
+
+            try
+            {
+                var splitted = generatorVersion.Substring(8).Split('.');
+                var generatorMajor = int.Parse(splitted[0]);
+                var generatorMinor = int.Parse(splitted[1]);
+
+                if (generatorMajor < major)
+                {
+                    return true;
+                }
+                else if (generatorMajor > major)
+                {
+                    return false;
+                }
+                else
+                {
+                    if (generatorMinor >= minor)
+                    {
+                        return false;
+                    }
+                    else
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarningFormat("{0}: {1}", generatorVersion, ex);
+                return false;
+            }
+        }
+
+        public static bool IsGeneratedUniGLTFAndOlder(this glTF gltf, int major, int minor)
+        {
+            if (gltf == null) return false;
+            if (gltf.asset == null) return false;
+            return IsGeneratedUniGLTFAndOlderThan(gltf.asset.generator, major, minor);
         }
     }
 }

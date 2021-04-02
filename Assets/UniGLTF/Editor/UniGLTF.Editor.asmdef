@@ -1,7 +1,10 @@
 {
     "name": "UniGLTF.Editor",
     "references": [
-        "UniGLTF"
+        "UniGLTF",
+        "MeshUtility",
+        "MeshUtility.Editor",
+        "VRMShaders"
     ],
     "optionalUnityReferences": [],
     "includePlatforms": [

@@ -45,9 +45,19 @@ namespace UniGLTF
             return new Vector4(v.x, v.y, -v.z, v.w);
         }
 
+        public static Vector4 ReverseX(this Vector4 v)
+        {
+            return new Vector4(-v.x, v.y, v.z, v.w);
+        }
+
         public static Vector3 ReverseZ(this Vector3 v)
         {
             return new Vector3(v.x, v.y, -v.z);
+        }
+
+        public static Vector3 ReverseX(this Vector3 v)
+        {
+            return new Vector3(-v.x, v.y, v.z);
         }
 
         [Obsolete]
@@ -67,6 +77,14 @@ namespace UniGLTF
             Vector3 axis;
             q.ToAngleAxis(out angle, out axis);
             return Quaternion.AngleAxis(-angle, ReverseZ(axis));
+        }
+
+        public static Quaternion ReverseX(this Quaternion q)
+        {
+            float angle;
+            Vector3 axis;
+            q.ToAngleAxis(out angle, out axis);
+            return Quaternion.AngleAxis(-angle, ReverseX(axis));
         }
 
         public static Matrix4x4 Matrix4x4FromColumns(Vector4 c0, Vector4 c1, Vector4 c2, Vector4 c3)
@@ -97,6 +115,12 @@ namespace UniGLTF
         public static Matrix4x4 ReverseZ(this Matrix4x4 m)
         {
             m.SetTRS(m.ExtractPosition().ReverseZ(), m.ExtractRotation().ReverseZ(), m.ExtractScale());
+            return m;
+        }
+
+        public static Matrix4x4 ReverseX(this Matrix4x4 m)
+        {
+            m.SetTRS(m.ExtractPosition().ReverseX(), m.ExtractRotation().ReverseX(), m.ExtractScale());
             return m;
         }
 
@@ -189,7 +213,7 @@ namespace UniGLTF
         {
             var current = self;
 
-            var split = path.Split('/');
+            var split = path.Split(new [] {'/'}, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var childName in split)
             {
@@ -262,14 +286,14 @@ namespace UniGLTF
             return new float[] { c.r, c.g, c.b, c.a };
         }
 
-        public static void ReverseZRecursive(this Transform root)
+        public static void ReverseRecursive(this Transform root, IAxisInverter axisInverter)
         {
             var globalMap = root.Traverse().ToDictionary(x => x, x => PosRot.FromGlobalTransform(x));
 
             foreach (var x in root.Traverse())
             {
-                x.position = globalMap[x].Position.ReverseZ();
-                x.rotation = globalMap[x].Rotation.ReverseZ();
+                x.position = axisInverter.InvertVector3(globalMap[x].Position);
+                x.rotation = axisInverter.InvertQuaternion(globalMap[x].Rotation);
             }
         }
 

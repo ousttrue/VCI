@@ -1,100 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEngine;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 
 namespace UniGLTF
 {
     public class gltfExporter : IDisposable
     {
-        const string MENU_EXPORT_GLB_KEY = UniGLTFVersion.MENU + "/Export(glb)";
-        const string MENU_EXPORT_GLTF_KEY = UniGLTFVersion.MENU + "/Export(gltf)";
-
-#if UNITY_EDITOR
-        [MenuItem(MENU_EXPORT_GLTF_KEY, true, 1)]
-        [MenuItem(MENU_EXPORT_GLB_KEY, true, 1)]
-        private static bool ExportValidate()
-        {
-            return Selection.activeObject != null && Selection.activeObject is GameObject;
-        }
-
-        [MenuItem(MENU_EXPORT_GLTF_KEY, priority = 0)]
-        private static void ExportGltfFromMenu()
-        {
-            ExportFromMenu(false, new MeshExportSettings
-            {
-                ExportOnlyBlendShapePosition = false,
-                UseSparseAccessorForMorphTarget = true,
-            });
-        }
-
-        [MenuItem(MENU_EXPORT_GLB_KEY, priority = 10)]
-        private static void ExportGlbFromMenu()
-        {
-            ExportFromMenu(true, MeshExportSettings.Default);
-        }
-
-        private static void ExportFromMenu(bool isGlb, MeshExportSettings settings)
-        {
-            var go = Selection.activeObject as GameObject;
-
-            var ext = isGlb ? "glb" : "gltf";
-
-            if (go.transform.position == Vector3.zero &&
-                go.transform.rotation == Quaternion.identity &&
-                go.transform.localScale == Vector3.one)
-            {
-                var path = EditorUtility.SaveFilePanel(
-                    $"Save {ext}", "", go.name + $".{ext}", $"{ext}");
-                if (string.IsNullOrEmpty(path))
-                {
-                    return;
-                }
-
-                var gltf = new glTF();
-                using (var exporter = new gltfExporter(gltf))
-                {
-                    exporter.Prepare(go);
-                    exporter.Export(settings);
-                }
-
-                if (isGlb)
-                {
-                    var bytes = gltf.ToGlbBytes();
-                    File.WriteAllBytes(path, bytes);
-                }
-                else
-                {
-                    var (json, buffers) = gltf.ToGltf(path);
-                    // without BOM
-                    var encoding = new System.Text.UTF8Encoding(false);
-                    File.WriteAllText(path, json, encoding);
-                    // write to local folder
-                    var dir = Path.GetDirectoryName(path);
-                    foreach (var b in buffers)
-                    {
-                        var bufferPath = Path.Combine(dir, b.uri);
-                        File.WriteAllBytes(bufferPath, b.GetBytes().ToArray());
-                    }
-                }
-
-                if (path.StartsWithUnityAssetPath())
-                {
-                    AssetDatabase.ImportAsset(path.ToUnityRelativePath());
-                    AssetDatabase.Refresh();
-                }
-            }
-            else
-            {
-                EditorUtility.DisplayDialog("Error", "The Root transform should have Default translation, rotation and scale.", "ok");
-            }
-        }
-#endif
 
         protected glTF glTF;
 
@@ -134,34 +47,12 @@ namespace UniGLTF
             private set;
         }
 
-        public TextureExportManager TextureManager;
+        public TextureExporter TextureManager;
 
         protected virtual IMaterialExporter CreateMaterialExporter()
         {
             return new MaterialExporter();
         }
-
-        private ITextureExporter _textureExporter;
-        public ITextureExporter TextureExporter
-        {
-            get
-            {
-                if (_textureExporter != null)
-                {
-                    return _textureExporter;
-                }
-                else
-                {
-                    _textureExporter = new TextureIO();
-                    return _textureExporter;
-                }
-            }
-            set
-            {
-                _textureExporter = value;
-            }
-        }
-
 
         /// <summary>
         /// このエクスポーターがサポートするExtension
@@ -175,7 +66,9 @@ namespace UniGLTF
             }
         }
 
-        public gltfExporter(glTF gltf)
+        IAxisInverter m_axisInverter;
+
+        public gltfExporter(glTF gltf, Axises invertAxis = Axises.Z)
         {
             glTF = gltf;
 
@@ -186,15 +79,17 @@ namespace UniGLTF
                 generator = "UniGLTF-" + UniGLTFVersion.VERSION,
                 version = "2.0",
             };
+
+            m_axisInverter = invertAxis.Create();
         }
 
         GameObject m_tmpParent = null;
 
         public virtual void Prepare(GameObject go)
         {
-            // コピーを作って、Z軸を反転することで左手系を右手系に変換する
+            // コピーを作って左手系を右手系に変換する
             Copy = GameObject.Instantiate(go);
-            Copy.transform.ReverseZRecursive();
+            Copy.transform.ReverseRecursive(m_axisInverter);
 
             // Export の root は gltf の scene になるので、
             // エクスポート対象が単一の GameObject の場合に、
@@ -273,6 +168,11 @@ namespace UniGLTF
             return node;
         }
 
+        public virtual void ExportExtensions()
+        {
+
+        }
+
         public virtual void Export(MeshExportSettings meshExportSettings)
         {
             var bytesBuffer = new ArrayByteBuffer(new byte[50 * 1024 * 1024]);
@@ -284,26 +184,19 @@ namespace UniGLTF
 
             #region Materials and Textures
             Materials = Nodes.SelectMany(x => x.GetSharedMaterials()).Where(x => x != null).Distinct().ToList();
-            var unityTextures = Materials.SelectMany(x => TextureExporter.GetTextures(x)).Where(x => x.texture != null).Distinct().ToList();
 
-            TextureManager = new TextureExportManager(unityTextures.Select(x => x.texture));
+            TextureManager = new TextureExporter();
 
             var materialExporter = CreateMaterialExporter();
             glTF.materials = Materials.Select(x => materialExporter.ExportMaterial(x, TextureManager)).ToList();
-
-            for (int i = 0; i < unityTextures.Count; ++i)
-            {
-                var unityTexture = unityTextures[i];
-                TextureExporter.ExportTexture(glTF, bufferIndex, TextureManager.GetExportTexture(i), unityTexture.textureType);
-            }
             #endregion
 
             #region Meshes
-            var unityMeshes = MeshWithRenderer.FromNodes(Nodes).Where(x=> x.Mesh.vertices.Any()).ToList();
+            var unityMeshes = MeshWithRenderer.FromNodes(Nodes).Where(x => x.Mesh.vertices.Any()).ToList();
 
             MeshBlendShapeIndexMap = new Dictionary<Mesh, Dictionary<int, int>>();
             foreach (var (mesh, gltfMesh, blendShapeIndexMap) in MeshExporter.ExportMeshes(
-                    glTF, bufferIndex, unityMeshes, Materials, meshExportSettings))
+                    glTF, bufferIndex, unityMeshes, Materials, meshExportSettings, m_axisInverter))
             {
                 glTF.meshes.Add(gltfMesh);
                 if (!MeshBlendShapeIndexMap.ContainsKey(mesh))
@@ -330,7 +223,7 @@ namespace UniGLTF
 
             foreach (var x in unitySkins)
             {
-                var matrices = x.GetBindPoses().Select(y => y.ReverseZ()).ToArray();
+                var matrices = x.GetBindPoses().Select(m_axisInverter.InvertMat4).ToArray();
                 var accessor = glTF.ExtendBufferAndGetAccessorIndex(bufferIndex, matrices, glBufferTarget.NONE);
 
                 var renderer = x.Renderer as SkinnedMeshRenderer;
@@ -412,6 +305,15 @@ namespace UniGLTF
             }
             #endregion
 #endif
+
+            ExportExtensions();
+
+            // Extension で Texture が増える場合があるので最後に呼ぶ
+            for (int i = 0; i < TextureManager.Exported.Count; ++i)
+            {
+                var unityTexture = TextureManager.Exported[i];
+                glTF.PushGltfTexture(bufferIndex, unityTexture);
+            }
         }
         #endregion
     }
