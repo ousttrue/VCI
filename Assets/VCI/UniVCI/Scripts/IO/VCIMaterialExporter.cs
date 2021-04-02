@@ -4,6 +4,7 @@ using UniGLTF;
 using UniGLTF.ShaderPropExporter;
 using System.Collections.Generic;
 using System.Linq;
+using VRMShaders;
 
 namespace VCI
 {
@@ -137,19 +138,19 @@ namespace VCI
             // "Queue",
         };
 
-        static glTFTextureTypes TextureType(string propName)
+        static TextureExporter.ConvertTypes TextureType(string propName)
         {
             if (propName == "_BumpMap")
             {
-                return glTFTextureTypes.Normal;
+                return TextureExporter.ConvertTypes.Normal;
             }
             else
             {
-                return glTFTextureTypes.SRGB;
+                return TextureExporter.ConvertTypes.None;
             }
         }
 
-        public static glTF_VCI_Material CreateFromMaterial(Material m, Func<Texture, glTFTextureTypes, int> textureIndex)
+        public static glTF_VCI_Material CreateFromMaterial(Material m, Func<Texture, TextureExporter.ConvertTypes, int> textureIndex)
         {
             var material = new glTF_VCI_Material
             {

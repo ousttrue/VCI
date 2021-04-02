@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using TMPro;
@@ -52,14 +53,12 @@ namespace VCI
             _originalNodes = go.transform.Traverse().Skip(go.transform.childCount == 0 ? 0 : 1).ToList();
         }
 
-        public override void Export(MeshExportSettings configuration)
+        public override void Export(MeshExportSettings configuration, Func<Texture, bool> useAsset)
         {
-            base.Export(configuration);
+            base.Export(configuration, useAsset);
 
             var gltf = glTF;
             var exporter = this;
-
-
 
             // VCIのmaterial拡張
             {
